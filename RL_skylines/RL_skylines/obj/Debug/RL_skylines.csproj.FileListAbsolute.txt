@@ -1,0 +1,14 @@
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\RL_skylines.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\RL_skylines.pdb
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\Assembly-CSharp.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\ColossalManaged.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\ICities.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\UnityEngine.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\PopsApiWrapper.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\Assembly-CSharp-firstpass.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\bin\Debug\ICSharpCode.SharpZipLib.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\obj\Debug\RL_skylines.csproj.AssemblyReference.cache
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\obj\Debug\RL_skylines.csproj.CoreCompileInputs.cache
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\obj\Debug\RL_skyli.93295185.Up2Date
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\obj\Debug\RL_skylines.dll
+C:\Users\basia\source\repos\RL_skylines\RL_skylines\obj\Debug\RL_skylines.pdb
