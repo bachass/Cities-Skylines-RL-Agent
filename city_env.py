@@ -57,8 +57,8 @@ class CityEnv:
             self.grid[x][z] = zone_type
             
             # 3. Formatujemy komendę dla gry (np. "createzone 2 50 120 1")
-            # Skalujemy x i z (np. mnożąc przez losowa wartosc 10-30), aby strefy nie nakładały się na siebie
-            world_x, world_z = x * np.random.randint(10, 30), z * np.random.randint(10, 30)     # DO ZMIANY!!!
+            # Skalujemy x i z (np. mnożąc przez 10), aby strefy nie nakładały się na siebie
+            world_x, world_z = x * 10, z * 10
             command = f"createzone {zone_type} {world_x} {world_z} 1"
             
             # 4. Wysyłamy komendę do C#
