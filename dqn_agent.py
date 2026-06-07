@@ -64,8 +64,8 @@ class DQNAgent:
         self.memory = ReplayBuffer(capacity=10000)
         
         # Hiperparametry
-        self.batch_size = 64
-        self.gamma = 0.99       # Czynnik dyskontujący przyszłe nagrody
+        self.batch_size = 128
+        self.gamma = 0.98       # Czynnik dyskontujący przyszłe nagrody
         self.epsilon = 1.0      # Zaczynamy od 100% losowych akcji (Eksploracja)
         self.epsilon_min = 0.1  # Minimalny próg losowości
         self.epsilon_decay = 0.995 # Jak szybko agent przestaje eksplorować
@@ -135,11 +135,11 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
 def train_agent():
-    env = CityEnv()
-    agent = DQNAgent(grid_size=10, metrics_size=5, action_size=env.action_space_size)
+    env = CityEnv(grid_size=50)
+    agent = DQNAgent(grid_size=50, metrics_size=11, action_size=env.action_space_size)
     
     # Hiperparametry treningu
-    EPISODES = 50
+    EPISODES = 1200
     STEPS_PER_EPISODE = 10
     TARGET_UPDATE_FREQ = 5 # Co ile epizodów odświeżać sieć docelową
     
@@ -166,11 +166,11 @@ def train_agent():
                 
                 state = next_state
                 total_reward += reward
-                print(f"Stan świata: {state['metrics']}")
+                print(f"Stan świata: \nPopulacja: {state['metrics'][0]}, Szczęście: {state['metrics'][1]}, Średnia długość życia: {state['metrics'][2]}, Bezrobocie: {state['metrics'][3]}, Dochód: {state['metrics'][4]}, Wydatki: {state['metrics'][5]}, Zanieczyszczenie wody: {state['metrics'][6]}, Zanieczyszczenie gleby: {state['metrics'][7]}, Popyt na mieszkania: {state['metrics'][8]}, Popyt na handel: {state['metrics'][9]}, Popyt na miejsca pracy: {state['metrics'][10]}")
                 print(f"Krok: {step+1} | Akcja: {action} | Nagroda: {reward:.2f} | Epsilon: {agent.epsilon:.2f}\n")
                 
                 # Opóźnienie, aby dać silnikowi Unity czas na przetworzenie symulacji
-                time.sleep(7) 
+                time.sleep(1) 
                 
             # Zmniejszanie eksploracji (Epsilon Decay) pod koniec każdego epizodu
             if agent.epsilon > agent.epsilon_min:
@@ -188,7 +188,7 @@ def train_agent():
     finally:
         env.close()
         # Zapisz wagi modelu na koniec!
-        torch.save(agent.policy_net.state_dict(), "cities_skylines_dqn.pth")
+        torch.save(agent.policy_net.state_dict(), f"cities_skylines_dqn_{time.strftime('%Y-%m-%d_%H-%M-%S')}.pth")
         print("Zapisano model do cities_skylines_dqn.pth")
 
 if __name__ == '__main__':

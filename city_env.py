@@ -4,29 +4,34 @@ import numpy as np
 import re
 
 class CityEnv:
-    def __init__(self, host='127.0.0.1', port=25001, grid_size=10):
+    def __init__(self, host='127.0.0.1', port=25001, grid_size=50):
         self.host = host
         self.port = port
         self.grid_size = grid_size
+        self.world_step_size = 8.0 
         
-        # Słownik dostępnych stref: 2=ResLow, 4=ComLow, 6=Ind
-        self.zone_types = [2, 4, 6] 
+        # KATALOG AKCJI: Co agent może postawić na pojedynczym kafelku?
+        # Format: ("typ_komendy_w_C#", ID_w_grze)
+        self.action_catalog = [
+            ("zone", 2),         # 0: Strefa Mieszkalna (ResLow)
+            ("zone", 4),         # 1: Strefa Komercyjna (ComLow)
+            ("zone", 6),         # 2: Strefa Przemysłowa (Ind)
+        ]
         
-        # Przestrzeń akcji: (10 * 10 komórek) * 3 typy stref = 300 możliwych akcji
-        self.action_space_size = (self.grid_size ** 2) * len(self.zone_types)
+        # Przestrzeń akcji: (50 * 50 komórek * 6 narzędzi) + 1 (Nic nie rób) = 15001 akcji
+        self.action_space_size = (self.grid_size ** 2) * len(self.action_catalog) + 1
         
-        # Stan wewnętrzny (Macierz mapy 10x10)
         self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
         
-        # Wektor metryk z C# (Populacja, Zadowolenie, Popyt, Przychód, Wydatki)
-        self.metrics = np.zeros(5, dtype=np.float32)
+        self.metrics = np.zeros(11, dtype=np.float32)
+        self.previous_metrics = np.zeros(11, dtype=np.float32)
+        
+        # Flaga do karania agenta za hakowanie nagrody
+        self.illegal_move_penalty = False 
         
         self.sock = None
         self.pipe = None
 
-        # Wektor metryk z C# (Populacja, Zadowolenie, Popyt, Przychód, Wydatki)
-        self.metrics = np.zeros(5, dtype=np.float32)
-        self.previous_metrics = np.zeros(5, dtype=np.float32) # NOWE
 
     def connect(self):
         """Nawiązuje połączenie TCP z silnikiem gry."""
@@ -44,79 +49,78 @@ class CityEnv:
                 time.sleep(2)
 
     def step(self, action_id):
-        """Wykonuje akcję w grze i zwraca nowy stan."""
-
-        # Zapisujemy stan przed wykonaniem akcji
         self.previous_metrics = self.metrics.copy()
+        self.illegal_move_penalty = False # Resetujemy flagę kary
 
         if action_id is not None:
-            # 1. Dekodujemy ID akcji z sieci neuronowej na X, Z i Typ Strefy
-            x, z, zone_type = self._decode_action(action_id)
+            # 1. Odkodowujemy akcję
+            x, z, command_type, game_id = self._decode_action(action_id)
             
-            # 2. Aktualizujemy naszą wewnętrzną "mapę cienia" w NumPy
-            self.grid[x][z] = zone_type
-            
-            # 3. Formatujemy komendę dla gry (np. "createzone 2 50 120 1")
-            # Skalujemy x i z (np. mnożąc przez 10), aby strefy nie nakładały się na siebie
-            world_x, world_z = x * 10, z * 10
-            command = f"createzone {zone_type} {world_x} {world_z} 1"
-            
-            # 4. Wysyłamy komendę do C#
-            self.sock.sendall((command + '\n').encode("utf-8"))
+            # 2. Obsługa akcji "Do Nothing" (Ostatnie ID w przestrzeni)
+            if command_type == "noop":
+                self.sock.sendall("ping\n".encode("utf-8"))
+                
+            else:
+                # 3. SPRAWDZANIE HAKOWANIA (Czy kafelek jest już zajęty?)
+                if self.grid[x][z] != 0:
+                    # Agent próbuje nadpisać kafelek! Nakładamy flagę kary i marnujemy ruch.
+                    self.illegal_move_penalty = True
+                    self.sock.sendall("ping\n".encode("utf-8"))
+                else:
+                    # Legalny ruch! Aktualizujemy wirtualną mapę
+                    self.grid[x][z] = game_id
+                    
+                    world_x = x * self.world_step_size
+                    world_z = z * self.world_step_size 
+                    
+                    # 4. Wysyłanie dynamicznej komendy (Strefa vs Budynek)
+                    if command_type == "zone":
+                        command = f"createzone {game_id} {world_x} {world_z} 1"
+                    elif command_type == "building":
+                        command = f"createbuilding {game_id} {world_x} {world_z}"
+                        
+                    self.sock.sendall((command + '\n').encode("utf-8"))
         else:
-            # Pusta akcja (inicjalizacja)
             self.sock.sendall("ping\n".encode("utf-8"))
 
-        # 5. Odbieramy najświeższe metryki od gry
         response = self.pipe.readline().strip()
         if not response:
             raise ConnectionError("Gra zerwała połączenie.")
         
-        # 6. Aktualizujemy wektor metryk
         self._update_metrics(response)
-        
-        # 7. Obliczamy nagrodę za ten krok!
         reward = self._calculate_reward()
-
-        # Zwracamy kompletny stan, nagrodę i flagę czy epizod się skończył
+        
         return self._get_state(), reward, False
 
     def _decode_action(self, action_id):
-        """
-        Matematyka dekodowania:
-        Każda komórka ma 3 możliwe akcje. 
-        Dzieląc action_id, uzyskujemy współrzędne i typ strefy.
-        """
-        zone_idx = action_id % len(self.zone_types)
-        cell_idx = action_id // len(self.zone_types)
+        """Nowy system dekodowania włączający budynki i No-Op"""
+        # Jeśli to ostatni dostępny indeks, agent zdecydował się przeczekać turę
+        if action_id == self.action_space_size - 1:
+            return None, None, "noop", 0
+            
+        action_idx = action_id % len(self.action_catalog)
+        cell_idx = action_id // len(self.action_catalog)
         
         x = cell_idx // self.grid_size
         z = cell_idx % self.grid_size
         
-        return x, z, self.zone_types[zone_idx]
+        command_type, game_id = self.action_catalog[action_idx]
+        return x, z, command_type, game_id
 
     def _update_metrics(self, response_str):
-        """Zamienia string na tablicę NumPy z czyszczeniem danych."""
+        """Aktualizacja z nowym rozmiarem tablicy."""
         try:
             values = response_str.split(',')
             clean_values = []
-            
             for v in values:
-                # Wyciągamy ze stringa WYŁĄCZNIE cyfry, minus i kropkę
-                # Usunie to wszelkie backticki (`), litery czy białe znaki
                 clean_v = re.sub(r'[^\d.-]', '', v)
-                
-                # Zabezpieczenie, gdyby po czyszczeniu string okazał się pusty
-                if clean_v == '':
-                    clean_v = '0'
-                    
+                if clean_v == '': clean_v = '0'
                 clean_values.append(clean_v)
                 
-            if len(clean_values) >= 5:
-                self.metrics = np.array(clean_values[:5], dtype=np.float32)
-                
+            # ZMIANA 2: Oczekujemy 11 wartości
+            if len(clean_values) >= 11:
+                self.metrics = np.array(clean_values[:11], dtype=np.float32)
         except Exception as e:
-            # W razie absolutnej awarii wypisze nam dokładną, "surową" zawartość stringa
             print(f"[!] BŁĄD DEKODOWANIA METRYK! Surowy string z C#: {repr(response_str)}")
             raise e
 
@@ -132,22 +136,33 @@ class CityEnv:
             self.sock.close()
 
     def _calculate_reward(self):
-        # Indeksy metryk: 0=Pop, 1=Hap, 2=ResDem, 3=Inc, 4=Exp
+        """Nowa funkcja nagrody oparta na macierzy wag."""
         
-        delta_population = self.metrics[0] - self.previous_metrics[0]
-        delta_happiness = self.metrics[1] - self.previous_metrics[1]
+        # Obliczamy deltę (zmianę) dla każdej z 11 metryk jednocześnie
+        deltas = self.metrics - self.previous_metrics
         
-        profit = self.metrics[3] - self.metrics[4] # Przychód minus wydatki
+        # Definiujemy wagi dla każdego parametru (Indeksy od 0 do 10)
+        # UWAGA: Wagi dostosuj według własnych upodobań treningowych!
+        weights = np.array([
+            10.0,    # 0: Pop (Wzrost populacji to plus)
+            3.0,    # 1: Hap (Zadowolenie jest bardzo ważne)
+            1.0,    # 2: AvgLife (Wzrost dł. życia to plus)
+            -2.0,   # 3: Unemp (Spadek bezrobocia to plus)
+            0.001,   # 4: Inc (Pieniądze często rosną w tysiącach, więc mniejsza waga)
+            -0.0001,  # 5: Exp (Wzrost wydatków to minus)
+            -1.0,   # 6: WaterPol (Zanieczyszczenia to surowa kara)
+            -1.0,   # 7: GroundPol (Zanieczyszczenia to surowa kara)
+            -5.0,   # 8: ResDem (Spadek zapotrzebowania to plus - spełniono potrzebę!)
+            -5.0,   # 9: ComDem
+            -5.0    # 10: WorkDem
+        ], dtype=np.float32)
         
-        # Konstruujemy sygnał nagrody. Wagi będą wzięte z pracy.
-        reward = (delta_population * 0.5) + (delta_happiness * 2.0)
-        
-        # Dodajemy karę za ujemny bilans finansowy miasta
-        if profit < 0:
-            reward -= 10.0
-            
-        # Opcjonalnie: stała kara za każdy krok (time penalty), 
-        # wymuszająca na agencie szybsze działanie
-        reward -= 0.1 
+        # Magia NumPy: Iloczyn skalarny. Mnoży każdą deltę przez jej wagę i sumuje wszystko w jedną liczbę.
+        reward = np.dot(deltas, weights)            
+        reward -= 0.1 # Time penalty (kara za upływający czas)
+
+        if self.illegal_move_penalty:
+            # Bardzo bolesna kara. Agent szybko oduczy się stawiania tam, gdzie już coś jest.
+            reward -= 50.0
         
         return float(reward)

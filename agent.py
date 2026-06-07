@@ -32,6 +32,7 @@ if __name__ == '__main__':
             
             print(f"Agent wykonał akcję ID: {random_action}")
             print(f"Otrzymana nagroda (Reward): {reward}")
+            print(f"Populacja: {state['metrics'][0]}, Szczęście: {state['metrics'][1]}, Średnia długość życia: {state['metrics'][2]}, Bezrobocie: {state['metrics'][3]}, Dochód: {state['metrics'][4]}, Wydatki: {state['metrics'][5]}, Zanieczyszczenie wody: {state['metrics'][6]}, Zanieczyszczenie gleby: {state['metrics'][7]}, Popyt na mieszkania: {state['metrics'][8]}, Popyt na handel: {state['metrics'][9]}, Popyt na miejsca pracy: {state['metrics'][10]}")
             print(f"Aktualne metryki: {state['metrics']}")
             print("Wycinek mapy (górny lewy róg 3x3):")
             print(state['map_grid'][:3, :3])
