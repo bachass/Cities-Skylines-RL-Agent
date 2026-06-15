@@ -4,9 +4,9 @@ import time
 
 # Importujemy nasze zaktualizowane środowisko i architekturę sieci
 from city_env import CityEnv
-from dqn_agent import QNetwork 
+from rainbow_dqn_agent import DuelingQNetwork 
 
-def run_trained_agent(model_path="cities_skylines_dqn_2026-06-14_19-17-16.pth"):
+def run_trained_agent(model_path="cities_skylines_rainbow_dqn_2026-06-15_11-09-01.pth"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Używane urządzenie: {device}")
 
@@ -15,7 +15,7 @@ def run_trained_agent(model_path="cities_skylines_dqn_2026-06-14_19-17-16.pth"):
     action_size = env.action_space_size
     
     # 1. Inicjalizacja sieci neuronowej
-    policy_net = QNetwork(grid_size=20, metrics_size=11, action_size=action_size).to(device)
+    policy_net = DuelingQNetwork(grid_size=20, metrics_size=11, action_size=action_size).to(device)
     
     # 2. Załadowanie wyuczonych wag
     try:
@@ -76,7 +76,7 @@ def run_trained_agent(model_path="cities_skylines_dqn_2026-06-14_19-17-16.pth"):
             state = next_state
             step += 1
             
-            time.sleep(1) 
+            time.sleep(3) 
 
     except KeyboardInterrupt:
         print("\nAgent zatrzymany przez użytkownika.")

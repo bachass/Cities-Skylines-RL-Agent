@@ -8,7 +8,7 @@ class CityEnv:
         self.host = host
         self.port = port
         self.grid_size = grid_size
-        self.world_step_size = 8.0 
+        self.world_step_size = 16.0 
         
         # KATALOG AKCJI: Co agent może postawić na pojedynczym kafelku?
         # Format: ("typ_komendy_w_C#", ID_w_grze)
@@ -46,34 +46,32 @@ class CityEnv:
                 # Pobieramy stan początkowy, wymuszając "pustą" akcję
                 return self.step(None) 
             except ConnectionRefusedError:
-                time.sleep(2)
+                time.sleep(1)
 
     def step(self, action_id):
         self.previous_metrics = self.metrics.copy()
-        self.illegal_move_penalty = False # Resetujemy flagę kary
+        self.illegal_move_penalty = False 
+
+        # Tymczasowe zmienne do przechowywania tego, co agent ostatecznie wybrał
+        executed_command = "noop"
+        executed_game_id = 0
 
         if action_id is not None:
-            # 1. Odkodowujemy akcję
             x, z, command_type, game_id = self._decode_action(action_id)
+            executed_command = command_type
+            executed_game_id = game_id
             
-            # 2. Obsługa akcji "Do Nothing" (Ostatnie ID w przestrzeni)
             if command_type == "noop":
                 self.sock.sendall("ping\n".encode("utf-8"))
-                
             else:
-                # 3. SPRAWDZANIE HAKOWANIA (Czy kafelek jest już zajęty?)
                 if self.grid[x][z] != 0:
-                    # Agent próbuje nadpisać kafelek! Nakładamy flagę kary i marnujemy ruch.
                     self.illegal_move_penalty = True
                     self.sock.sendall("ping\n".encode("utf-8"))
                 else:
-                    # Legalny ruch! Aktualizujemy wirtualną mapę
                     self.grid[x][z] = game_id
-                    
                     world_x = x * self.world_step_size
                     world_z = z * self.world_step_size 
                     
-                    # 4. Wysyłanie dynamicznej komendy (Strefa vs Budynek)
                     if command_type == "zone":
                         command = f"createzone {game_id} {world_x} {world_z} 1"
                     elif command_type == "building":
@@ -88,7 +86,9 @@ class CityEnv:
             raise ConnectionError("Gra zerwała połączenie.")
         
         self._update_metrics(response)
-        reward = self._calculate_reward()
+        
+        # ZMIANA: Przekazujemy typ akcji i ID obiektu do funkcji nagrody
+        reward = self._calculate_reward(executed_command, executed_game_id)
         
         return self._get_state(), reward, False
 
@@ -135,7 +135,7 @@ class CityEnv:
         if self.sock:
             self.sock.close()
 
-    def _calculate_reward(self):
+    def _calculate_reward(self, command_type, game_id):
         """Nowa funkcja nagrody oparta na macierzy wag."""
         
         # Obliczamy deltę (zmianę) dla każdej z 11 metryk jednocześnie
@@ -144,7 +144,7 @@ class CityEnv:
         # Definiujemy wagi dla każdego parametru (Indeksy od 0 do 10)
         # UWAGA: Wagi dostosuj według własnych upodobań treningowych!
         weights = np.array([
-            10.0,    # 0: Pop (Wzrost populacji to plus)
+            20.0,    # 0: Pop (Wzrost populacji to plus)
             3.0,    # 1: Hap (Zadowolenie jest bardzo ważne)
             1.0,    # 2: AvgLife (Wzrost dł. życia to plus)
             -2.0,   # 3: Unemp (Spadek bezrobocia to plus)
@@ -162,7 +162,50 @@ class CityEnv:
         reward -= 0.1 # Time penalty (kara za upływający czas)
 
         if self.illegal_move_penalty:
-            # Bardzo bolesna kara. Agent szybko oduczy się stawiania tam, gdzie już coś jest.
-            reward -= 50.0
+            # Bardzo bolesna kara za stawianie tam, gdzie już coś jest.
+            reward -= 100.0
         
+        if command_type == "zone":
+            demand = 0
+            
+            # Sprawdzamy stan paska zapotrzebowania PRZED podjęciem akcji
+            if game_id == 2:   # ResidentialLow
+                demand = self.previous_metrics[8]
+            elif game_id == 4: # CommercialLow
+                demand = self.previous_metrics[9]
+            elif game_id == 6: # Industrial
+                demand = self.previous_metrics[10]
+
+            total_demand = self.previous_metrics[8] + self.previous_metrics[9] + self.previous_metrics[10] + 1
+
+            if demand/total_demand < 0.1:
+                # Agent buduje coś, czego nikt nie chce -> Potężna kara
+                reward -= 1000.0  
+            elif demand/total_demand > 0.8:
+                # Agent zaspokaja palącą potrzebę rynku -> Duża nagroda
+                reward += 1000.0   
+            else:
+                # Średni popyt -> Skalowalna premia/kara. 
+                # Jeśli popyt to 40, agent dostanie +10. Jeśli popyt to 20, dostanie -10.
+                reward += (demand - 30) * 1.0
+
         return float(reward)
+    
+    def reset(self):
+        """Resetuje środowisko gry do stanu początkowego."""
+        # 1. Czyścimy wirtualną mapę agenta w Pythonie
+        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+        
+        # 2. Wysyłamy żądanie czyszczenia do Cities: Skylines
+        self.sock.sendall("clearzones\n".encode("utf-8"))
+        
+        # 3. Odbieramy świeże metryki z pustego miasta
+        response = self.pipe.readline().strip()
+        if not response:
+            raise ConnectionError("Gra zerwała połączenie podczas resetu.")
+            
+        self._update_metrics(response)
+        self.previous_metrics = self.metrics.copy()
+        
+        # Zwracamy czysty stan początkowy
+        return self._get_state()

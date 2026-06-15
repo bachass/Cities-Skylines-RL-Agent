@@ -68,7 +68,7 @@ class DQNAgent:
         self.gamma = 0.98       # Czynnik dyskontujący przyszłe nagrody
         self.epsilon = 1.0      # Zaczynamy od 100% losowych akcji (Eksploracja)
         self.epsilon_min = 0.1  # Minimalny próg losowości
-        self.epsilon_decay = 0.995 # Jak szybko agent przestaje eksplorować
+        self.epsilon_decay = 0.999 # Jak szybko agent przestaje eksplorować
         
     def select_action(self, state):
         """Strategia Epsilon-Greedy: wybór między eksploracją a eksploatacją."""
@@ -135,13 +135,13 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
 def train_agent():
-    env = CityEnv(grid_size=50)
-    agent = DQNAgent(grid_size=50, metrics_size=11, action_size=env.action_space_size)
+    env = CityEnv(grid_size=20)
+    agent = DQNAgent(grid_size=20, metrics_size=11, action_size=env.action_space_size)
     
     # Hiperparametry treningu
-    EPISODES = 1200
-    STEPS_PER_EPISODE = 10
-    TARGET_UPDATE_FREQ = 5 # Co ile epizodów odświeżać sieć docelową
+    EPISODES = 500
+    STEPS_PER_EPISODE = 5
+    TARGET_UPDATE_FREQ = 20 # Co ile epizodów odświeżać sieć docelową
     
     try:
         print("Uruchamianie środowiska...")
@@ -170,7 +170,7 @@ def train_agent():
                 print(f"Krok: {step+1} | Akcja: {action} | Nagroda: {reward:.2f} | Epsilon: {agent.epsilon:.2f}\n")
                 
                 # Opóźnienie, aby dać silnikowi Unity czas na przetworzenie symulacji
-                time.sleep(1) 
+                time.sleep(3) 
                 
             # Zmniejszanie eksploracji (Epsilon Decay) pod koniec każdego epizodu
             if agent.epsilon > agent.epsilon_min:
